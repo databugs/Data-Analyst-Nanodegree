@@ -1,0 +1,562 @@
+---
+title: "Prosper Loan Data Analysis"
+author: "Abah Linson Igoche"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    # theme of html document
+    # theme of code highlight
+    # table of contents
+    theme       : sandstone
+    highlight   : tango
+    toc         : true
+    toc_depth   : 3
+    toc_float   : true
+    df_print    : paged
+  pdf_document:
+    highlight: tango
+  prettydoc::html_pretty:
+    highlight: vignette
+    keep_md: yes
+    theme: cayman
+  word_document: default
+header-includes: \usepackage{booktabs}
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r include = FALSE}
+# knitr: Suppress code/messages/warnings 
+#        Set default plot options and center them
+knitr::opts_chunk$set(fig.width=9,fig.height=5,fig.path='Figs/',
+                      fig.align='center',tidy=TRUE,
+                      echo=FALSE,warning=FALSE,message=FALSE)
+```
+
+```{r packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+suppressMessages(library(devtools))
+suppressMessages(library(ggplot2))
+suppressMessages(library(ggthemes))
+suppressMessages(library(dplyr))
+suppressMessages(library(memisc))
+suppressMessages(library(gridExtra))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(magrittr))
+suppressMessages(library(xtable))
+suppressMessages(library(knitr))
+suppressMessages(library(DT))
+suppressMessages(library(scales))
+suppressMessages(library(plotrix))
+suppressMessages(library(corrplot))
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+```
+
+```{r echo=FALSE,message=FALSE, warning=FALSE, Load_the_Data}
+# Load the Data
+df <- read.csv('prosperLoanData_2.csv')
+```
+
+# Introduction
+> Prosper was founded in 2005 as the first peer-to-peer lending marketplace in the United States. Since then, Prosper has facilitated more than $14 billion in loans to more than 890,000 people. Through Prosper, people can invest in each other in a way that is financially and socially rewarding. Borrowers apply online for a fixed-rate, fixed-term loan between $2,000 and $40,000. Individuals and institutions can invest in the loans and earn attractive returns. Prosper handles all loan servicing on behalf of the matched borrowers and investors. [Source](https://www.prosper.com/about "Prosper Loans")
+
+The Dataset used in this analysis holds various variables, ranging from Loan Original Amount to listing Creation year. As it stands, I do not know what to expect. So, I will expore the data, with great interest of course, hoping to gain insight and where possible make some assumptions. You will find the dataset used for this analysis [here](https://s3.amazonaws.com/udacity-hosted-downloads/ud651/prosperLoanData.csv).
+
+*Let's get started.*
+
+# Univariate Plots Section
+
+## preliminary exploration
+
+## Number of observations and columns
+```{r Shape}
+# shape of dataset
+dim(df)
+```
+
+There are 113937 rows and 81 columns in the data.
+
+```{r ListingsByYear}
+# This function extracts specific dates like
+# year, month, and day from a given date
+ExtractDate <- function(DateColumn, DateFormat, DateToExtract){
+  return(format(strptime(DateColumn, DateFormat), DateToExtract))
+}
+
+# new variable, ListingsCreationYear
+df$ListingCreationYear <- ExtractDate(df$ListingCreationDate, "%Y-%m-%d %H:%M:%OS", "%Y")
+  
+# group listings by CreationYear
+listings_year <- df %>%
+  group_by(ListingCreationYear) %>%
+  summarise(n = n())
+
+# rename the columns
+colnames(listings_year) = aes("Year", "NumberOfListingsCreated")
+
+# plot listings_year
+listings_year %>% 
+  ggplot(aes(x = Year, y = NumberOfListingsCreated, group=1)) +
+  geom_line(color="skyblue")+
+  geom_point()+
+  theme_pander()+
+  labs(title="Listings Created by Year", y="Number Of Listings Created")
+```
+
+2013 had highest number of listings. This is after a deep fall in 2009 leading to gaps in the data. As seen on [Wikipedia](https://en.wikipedia.org/wiki/Prosper_Marketplace),
+
+>"On November 24, 2008, the SEC found Prosper to be in violation of the Securities Act of 1933. As a result of these findings, the SEC imposed a cease and desist order on Prosper ... In July 2009, Prosper reopened their website for lending ("investing") and borrowing after having obtained SEC registration for its loans ("notes"). After the relaunch, bidding on loans was restricted to residents of 28 U.S. states and the District of Columbia. Borrowers may reside in any of 47 states, with residents of three states (Iowa, Maine, and North Dakota) not permitted to borrow through Prosper."
+
+This was followed by a continued increase from 2010 to 2013. I, however, findd it strange that the listings created in 2014 didn't follow the trend. What is happening here? Let's find out!
+
+```{r ListingsByMonths}
+#new variable, ListingsCreationMonth
+df$ListingCreationMonth <- ExtractDate(df$ListingCreationDate, "%Y-%m-%d %H:%M:%OS", "%m")
+
+# group listings by ListingCreationMonth
+listings_month <- df %>%
+  group_by(ListingCreationMonth) %>%
+  summarise(n = n())
+
+# rename columns
+colnames(listings_month) = aes("Month", "NumberOfListingsCreated")
+
+listings_month %>% 
+  ggplot(aes(x = Month, y = NumberOfListingsCreated)) +
+  geom_bar(stat = "identity", fill="skyblue")+
+  theme_pander()+
+  labs(title="Listings Created by Month", y="Number Of Listings Created")
+```
+
+Before we investiagte what happened in 2014. I decided to first of all view all listings by months. Here, we see that January has the highest number of listings, followed closely by October, november and december.
+
+
+```{r GroupListings}
+# Group Listings by ListingCreationYear and
+# ListingCreationMonth
+ListingsYearMonth <- df %>%
+                  mutate(year = ListingCreationYear,
+                        month = ListingCreationMonth) %>%
+                  group_by(year, month) %>% 
+                  summarise(NumberOfListingsCreated = n())
+                  
+#listings Created in 2005                  
+listings2005 <- filter(ListingsYearMonth, year=="2005") %>% 
+                ggplot(aes(x=month, y=NumberOfListingsCreated))+
+                geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+                theme_pander() +
+                labs(title="2005 Listings", y="No. of listings")
+
+#listings created in 2014
+listings2014 <- filter(ListingsYearMonth, year=="2014") %>% 
+                ggplot(aes(x=month, y=NumberOfListingsCreated))+
+                geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+                theme_pander()+
+                labs(title="2014 Listings", y="No. of listings")
+
+# listings created in 2008
+listings2009 <- filter(ListingsYearMonth, year=="2009") %>% 
+                ggplot(aes(x=month, y=NumberOfListingsCreated))+
+                geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+                theme_pander()+
+                labs(title="2009 Listings", y="No. of listings")
+
+# listings created in 2008
+listings2008 <- filter(ListingsYearMonth, year=="2008") %>% 
+                ggplot(aes(x=month, y=NumberOfListingsCreated))+
+                geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+                theme_pander()+
+                labs(title="2008 Listings", y="No. of listings")
+
+grid.arrange(listings2005,
+             listings2014,
+             listings2008,
+             listings2009,
+             nrow =2, ncol =2)
+```
+
+Oh, this is interesting. For 2014, we have the data for only the first quarter. This is a possible explanation for the downward trend we saw in the first plot. And for 2005, the avaiable data is for only November and December. What would the monthly trend look like if I take out these months from the data to reflect the trend from 2006 to 2013 alone?
+
+Considering that I had mentioned that prosper was sanctioned in November 2008, the last two graphs shows the gap in the data.
+
+```{r Listings_Filter20052014}
+# filter out listings created in 2005 and 2014
+# plot the result
+filter(ListingsYearMonth, !year %in% c("2005","2014")) %>%
+                    ggplot(aes(x=month, y=NumberOfListingsCreated))+
+                    geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+                    theme_pander()+
+                    labs(title="Listings By Month (Exclusive of 2005 and 2014)", y="No. of listings")
+```
+
+Wow! This is quite a big difference. Now, we see that the number of created listings increases gradually from the being of the year to the end.
+
+```{r quickSummary}
+# statistical summary of relevant variables
+quickSummary <- dplyr::select(df, MonthlyLoanPayment,
+                     LoanOriginalAmount,
+                     StatedMonthlyIncome,
+                     EmploymentStatusDuration,
+                     ProsperRating..Alpha.,
+                     ProsperScore,
+                     DebtToIncomeRatio,
+                     BorrowerRate) %>% lapply(summary)
+quickSummary
+```
+
+
+```{r Prosper_Score}
+# Distribution of prosper score
+df %>% filter(!is.na(ProsperScore)) %>%
+    ggplot(aes(x = ProsperScore)) +
+    geom_histogram(binwidth = 1, color = 'white',fill="skyblue") +
+    scale_x_continuous(breaks = seq(1, 11, 1))+
+  theme_pander()+
+  labs(title="Distribution of Prosper Score")
+```
+
+Most borrowers have a prosoer score from 4 to 8. 29084 borrowers had no prosper score.
+
+
+```{r EmploymentStatusDuration}
+# ditribution of Employment  Status duration
+df %>% subset(!is.na(EmploymentStatusDuration)) %>%
+  ggplot(aes(x = EmploymentStatusDuration/12)) +
+    geom_histogram(binwidth = 1, color = 'white', fill="skyblue") +
+    scale_x_continuous(breaks = seq(0, 100, 5)) +
+    theme_pander() +
+    labs(titile="Employment Status Duration", x="Employment Status Duration (Yrs)", y="count")
+```
+
+It seems like most of the borrowers have maintained their employment status for less than 15 years.
+
+```{r ProsperRating..Alpha.}
+# plot ProsperRating..Alpha. bar graph
+df %>% group_by(ProsperRating..Alpha.) %>%
+    summarise(n = n()) %>%
+    ggplot(aes(x = ProsperRating..Alpha., y = n)) +
+    geom_bar(stat = 'identity', position="dodge", fill="skyblue") +
+    theme_pander() +
+    labs(title="Prosper Rating (Alpha)",y="\nNo. of borrowers", x="Borrower Rating")
+```
+
+Most borrowers do not have prosper rating (Apha).
+
+```{r warning=FALSE, StatedMonthlyIncome}
+# distribution of StatedMonthlyIncome
+df %>% subset(!is.na(StatedMonthlyIncome)) %>% 
+  ggplot(aes(x = StatedMonthlyIncome)) +
+    geom_histogram(binwidth = 1000, color = 'white', fill="skyblue") +
+    scale_x_continuous(limits = c(0, 20000)) +
+    theme_pander() +
+  labs(title="Stated Monthly Income")
+```
+
+Most borrowers earn below 10,000 dollars.
+
+```{r warning=FALSE, LoanOriginalAmount}
+# distribution of LoanOriginalAmount
+ggplot(aes(x = LoanOriginalAmount), data = df) +
+    geom_histogram(binwidth = 500, color = 'white', fill="skyblue") +
+    scale_x_continuous(breaks = seq(0, 25000, 5000), limits = c(0, 25000)) +
+    theme_pander()+
+  labs(title="Loan Original Amount")
+```
+
+Borrowers preferred to takes laons in 5000s and 10000s.
+
+```{r warning=FALSE, MonthlyLoanPayment}
+# distribution of MonthlyLoanPayment
+ggplot(aes(x = MonthlyLoanPayment), data = df) +
+    geom_histogram(binwidth = 10, color = 'white', fill="skyblue") +
+    scale_x_continuous(breaks = seq(0, 1000, 100), limits = c(0, 1000)) +
+    theme_pander() + labs(title="Histogram: Monthly Loan Payment", x="Monthly Loan Payment")
+```
+
+This histogram shows that a huge number borrows made a monthly Loan payment of 170. As seen earlier, the median Month Loan Payment is 217.7.
+
+```{r warning=FALSE, DebtToIncomeRatio}
+# distribution of DebtToIncomeRatio
+ggplot(aes(x = DebtToIncomeRatio), data = df) +
+    geom_histogram(binwidth = 0.05, color = 'white', fill="skyblue") +
+    scale_x_continuous(limits = c(0.0, 0.7), 
+                       breaks = seq(0.0, 0.6, 0.1)) +
+    theme_pander()+
+  labs(title="Debt To Income Ratio")
+```
+
+Most borrowers have a debt to income ratio of less than 0.4.
+
+```{r warning=FALSE, BorrowerRate}
+# Distribution of BorrowerRate
+ggplot(aes(x = BorrowerRate), data = df) +
+    geom_histogram(binwidth = 0.01, color = 'white', fill="skyblue") +
+    scale_x_continuous(breaks = seq(0.07, 0.5, 0.05),
+                       limits = c(0.00, 0.5)) +
+  theme_pander()+
+  labs(title="Borrower Rate")
+```
+
+```{r warning=FALSE, EstimatedEffectiveYield}
+# distribution of EstimatedEffectiveYield
+ggplot(aes(x = EstimatedEffectiveYield), data = df) +
+    geom_histogram(aes(y = ..density..), binwidth = 0.01, na.rm = T, 
+                   color = 'darkblue', fill = 'lightblue') +
+    theme_hc() +
+    scale_x_continuous(limits = c(-0.1, 0.5), 
+                       breaks = seq(-0.1, 0.5, 0.05)) +
+    geom_density(alpha=.2, fill="#FF6666", na.rm = T) + 
+    geom_vline(aes(xintercept=mean(EstimatedEffectiveYield, na.rm=T)), 
+               color="blue", linetype="dashed", size=1) +
+    labs(title="Distribution of EstimatedEffectiveYield", 
+            subtitle = "with the mean axis") +
+    theme(plot.title = element_text(colour = '#FF6666', 
+                                    size=18))
+```
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+The dataset has 113937 observations and  81 variables
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features of interest are BorrowerRate, LoanOriginalAmount,
+MonthlyLoanPayment, and ProsperScore.
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+
+Another feature that might come handy is MonthlyLoanPayment, BorrowerAPR, LenderYield,
+and OnTimeProsperPayments.
+
+### Did you create any new variables from existing variables in the dataset?
+Yes, I created the listing year and month variables from the ListingsCreationDate.
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+I extraced and filtered out years with few number of months in the ListingCreationDate.
+This was to help understand why 2014 did not follow the existing trend.
+
+
+# Bivariate Plots Section
+
+```{r ProsperScore_BorrowerAPR}
+# boxplot of ProsperScore vs BorrowerAPR
+ggplot(aes(x = as.factor(ProsperScore),
+           y = BorrowerAPR),
+       data = subset(df, !is.na(df$ProsperScore) &
+                       !is.na(df$BorrowerAPR)))+
+  geom_jitter(width = 0.35, height = 0, alpha = 0.2, color = "skyblue") +
+  geom_boxplot(alpha = 0.4, color = "orange") +
+  theme_pander() +
+  labs(title = "Interest Rate Distributions") +
+  xlab("Prosper Score")
+```
+
+```{r ProsperScore_BorrowerRate}
+# boxplot of ProsperScore vs BorrowerRate
+ggplot(aes(x = as.factor(ProsperScore), y = BorrowerRate), 
+       data = subset(df, !is.na(df$ProsperScore) & 
+                         !is.na(df$BorrowerRate))) +
+  geom_jitter(width = 0.35, height = 0, alpha = 0.2, color = "skyblue") +
+  geom_boxplot(alpha = 0.4, color = "orange") +
+    theme_pander() +
+  xlab("Prosper Score")
+```
+
+It is interesting to see that as the borrowers' Prosper Score increases, the Borrower's Annual Percentage Rate (APR) and The Borrower's interest rate for this loan decreases.
+
+```{r EstimatedEffectiveYield_ProsperScore}
+# distribution of EstimatedEffectiveYield and ProsperScore using violin
+df$ProsperScore <- factor(df$ProsperScore)
+ggplot(aes(x = ProsperScore, y = EstimatedEffectiveYield, fill=ProsperScore), 
+       data = subset(df, !is.na(df$ProsperScore) & 
+                         !is.na(df$EstimatedEffectiveYield))) +
+    geom_violin(trim = F, scale = "width") +
+    stat_summary(fun.y=median, geom="point", size=2, color="black") +
+    scale_fill_manual(values=colorRampPalette(c("red", "lightgreen"))(11)) + 
+    theme_minimal() +
+    ylab('Effective yeild of Lenders') +
+    labs(title="Effective Yield for each Risk Factor") +
+    theme(plot.title = element_text(color = 'skyblue', 
+                                    size=22)) + guides(fill = F)
+```
+
+The effective yield of lenders also reduces as the Prosper Score increases. The dark spot in the middle of the Violin is the median EstimatedEffectiveYield.
+
+
+```{r LoanOriginalAmount_MonthlyLoanPayment}
+# correlation between LoanOriginalAmount and MonthlyLoanPayment
+ggplot(aes(x = LoanOriginalAmount, y = MonthlyLoanPayment), data = df) +
+  geom_point()+
+  theme_economist_white() +
+  labs(title="LoanOriginalAmount vs MonthlyLoanPayment")
+```
+
+There is a Positive correlation between the LoanOriginalAmount and MonthlyLoanPayment. As LoanOriginal amount increases, MonthlyLoanPayment increases, too.
+
+```{r  warning=FALSE, LoanOriginalAmount_OnTimeProsperPayments}
+# plot the Correlation of LoanOriginalAmount vs OnTimeProsperPayments
+ggplot(aes(x = LoanOriginalAmount, y = OnTimeProsperPayments), 
+       data = df) +
+    geom_point(position = "jitter", alpha = 1/2) +
+    theme_hc() +
+    ggtitle("Correlation of LoanOriginalAmount vs OnTimeProsperPayments") +
+    geom_smooth(method = "lm")
+```
+
+I was hoping that the number of OnTimePayments would decrease as the number of LoanOriginalAmount increases, but that does not seem to be the case.
+
+```{r warning=FALSE, LenderYield_BorrowerAPR}
+# plot the Correlation of BorrowerAPR vs LenderYield
+ggplot(aes(y = LenderYield, x = BorrowerAPR), 
+       data = df) +
+    geom_point(position = "jitter", alpha = 1/2) +
+    theme_hc() +
+    ggtitle("Correlation of BorrowerAPR vs LenderYield")
+```
+
+
+
+
+```{r fig.width=10, fig.height=9, CorrelationPlot}
+# correlation plot
+d <- data.frame(Term=df$Term,
+                BorrowerAPR=df$BorrowerAPR,
+                BorrowerRate=df$BorrowerRate,
+                LenderYield=df$LenderYield,
+                EffectiveYield = df$EstimatedEffectiveYield,
+                Loss = df$EstimatedLoss,
+                Duration = df$EmploymentStatusDuration,
+                income = df$StatedMonthlyIncome,
+                payment = df$MonthlyLoanPayment,
+                Return = df$EstimatedReturn)
+d[is.na(d)] <- 0
+d <- round(cor(d[sapply(d, is.numeric)]), 2)
+corrplot(d, method = "circle", addCoef.col = 'black')
+```
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+Prosper Score had a relationship with EstimatedEffectiveYield, BorrowAPR, and BorrowRate.
+Borrowers with small prosper score have a high EstimatedEffectiveYield, BorrowAPR, and BorrowRate.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+There is a correlation between LoanOriginalAmount and MonthlyLoanPayment. I had hoped to find a relationship between OnTimePayments and LoanOriginalAmount but found none. There also was a strong positive relationship LenderYied and BorrowerAPR.
+
+### What was the strongest relationship you found?
+The strongest relationship is between LoanOriginalAmount and MonthlyLoanPayment.
+
+# Multivariate Plots Section
+
+
+```{r Multivariate_Plots}
+# plot the Correlation of MonthlyLoanPayment vs LoanOriginalAmount/Term
+ggplot(aes(x = LoanOriginalAmount, y = MonthlyLoanPayment, color=factor(Term)), 
+       data = df) +
+    geom_point(position = "jitter", alpha = 1/2) +
+    theme_hc() +
+  labs(title="Correlation of MonthlyLoanPayment vs LoanOriginalAmount/Term", color="Term (Months)")
+```
+
+Adding Term to MonthlyLoanPayment and LoanOriginalPayment shows that borrowers who had a shorter period of time to pay back their loans had higher monthly payments. Does this imply that Lenders make more profit from loans that take shorter time to pay back? I will say, this is quite unlikely.
+
+```{r BorrowerAPR_LenderYield}
+# plot the Correlation of BorrowerAPR vs LenderYield/Term
+ggplot(aes(y = LenderYield, x = BorrowerAPR, color=factor(Term)), 
+       data = subset(df, !is.na(LenderYield) & !is.na(BorrowerAPR))) +
+    geom_point(position = "jitter", alpha = 0.2) +
+    theme_hc() +
+    labs(title = "Correlation of BorrowerAPR vs LenderYield/Term", color="Term (months)")
+```
+
+Here we see that the Lender gets more yield from long term loans. A reason for this could be that many borrowers opt for long terms loans since the amount to be paid back every month is lower than that of short term loans. Again, another reason is the possibility that people who take long term loans end up paying more interest than does who opted for short term loans.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+Yes, I discovered that people who tooks loans on a short term had a higher paying rate than those who had a long term based loans. The situation remained the same despite the change in the amount borrowed. And not surprising, the more Lenders charge borrowers the higher their yield.
+
+### Were there any interesting or surprising interactions between features?
+
+It was suprising to find that despite the fact that short terms loans had a high monthly payback rate, Lender seem to get more yield from long term loans.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r plot_one}
+# distribution of EstimatedEffectiveYield vs ProsperScore
+ggplot(aes(x = ProsperScore, y = EstimatedEffectiveYield, fill=ProsperScore), 
+       data = subset(df, !is.na(as.factor(df$ProsperScore)) & 
+                         !is.na(df$EstimatedEffectiveYield))) +
+    geom_violin(trim = F, scale = "width") +
+    stat_summary(fun.y=median, geom="point", size=2, color="black") +
+    scale_fill_manual(values=colorRampPalette(c("red", "lightgreen"))(11)) + 
+    theme_minimal() +
+    labs(title="Effective Yield for each Risk Factor",
+        y='Effective yeild of Lenders',
+        x='Prosper Score') +
+    theme(plot.title = element_text(colour = 'skyblue', 
+                                    size=22)) + guides(fill = F)
+    
+```
+
+### Description One
+The plot above shows the Effective yield for each Risk Factor. A risk factor of 1 is high, 10 and 11 are the least risk factors. To aide a better understanding of the risk factors, the violin coorresponding to each risk factor has been colored in the range red to light-green. Red indicates a poor risk factor while light-green indicates the best risk factor. The dark spot in the middle of the violin refers to the median Estimated Effective Yield, which is on the y axis of the plot.
+>The plot shows a trend: As I inspect the plot from left to right(worst to best risk factor), I noticed that lenders charge more for users with poor risk factor compared to those who had a better to best risk factor. Do recall that most borrowers who took prosper loans have a risk factor (prosper score) ranging from 3 to 9.
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+# plot the Correlation of LoanOriginalAmount vs MonthlyLoanPayment/Term
+ggplot(aes(x = LoanOriginalAmount, y = MonthlyLoanPayment, color=factor(Term)), 
+       data = df) +
+    geom_point(position = "jitter", alpha = 1/2) +
+    theme_hc() +
+    ggtitle("Correlation of LoanOriginalAmount vs MonthlyLoanPayment/Term")+
+  labs(x="Loan Original Amount", y="Monthly Loan Payment", color="Term (Months)")
+```
+
+### Description Two
+The above plot shows the correlation between LoanOriginalAmount And MonthlyLoanPayment. The amount a borrower is expected to payback on monthly basis increases as the LoanOriganl amount increases. But that is not all. The colors represent the number of months loans are expected to be paid back. Loans taking shorter duration have high monthly installments compared to loans that take longer time.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+# plot the Correlation of BorrowerAPR vs LenderYield/Term
+ggplot(aes(y = LenderYield, x = BorrowerAPR, color=factor(Term)), 
+       data = subset(df, !is.na(LenderYield) & !is.na(BorrowerAPR))) +
+    geom_point(position = "jitter", alpha = 0.2) +
+    theme_hc() +
+    labs(title="Correlation of BorrowerAPR vs LenderYield/Term", color="Term (Months") +
+  ylab("Lender Yield (bps)")+
+  xlab("Borrower APR (bps)")
+```
+
+### Description Three
+This plot, with BorrowerAPR on the x axis and LenderYield on the y axis, shows that despite the fact that short term loans had a high monthly installments on payback (as seen in the previous plot) lenders generated more yield from lonf term loans. Again, the colors refer to the term of the loans.
+
+------
+
+# Reflection
+
+This has been a tasking analysis. The sheer size of the number of observations and variables is intimidating. It was however interesting to explore the data and find interesting insights. From this analysis, I found that Prosper score is a huge factor in determing how much a borrower will be charged. So, if a borrower has a poor prosper score, they will be charged more interest than a borrower with good prosper score. Borrowers with low income might choose to opt for long term loans as this requires that the have a considerably low monthly payments. But they do have to make sure that they are not payment more interest due to the duration of the loan. I say this because I saw that the lender made more profit from loans that took more than 12 months to payback completely. With this in mind, a possible future analysis would go on to investigate if long terms loans, despite having low monthly installments, do have a high interest rate than short term loans. It would as cover building a models that predicts how much a borrower would be charged as interest based on relevant factors of interest.
